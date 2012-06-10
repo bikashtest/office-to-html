@@ -3,7 +3,10 @@ package org.apache.poi.xssf.converter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.MathContext;
 import java.util.Iterator;
+import java.util.List;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
@@ -19,6 +22,8 @@ import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.openxml4j.opc.OPCPackage;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.util.CellRangeAddress;
+import org.apache.poi.ss.util.CellRangeAddressList;
 import org.apache.poi.xssf.usermodel.XSSFCell;
 import org.apache.poi.xssf.usermodel.XSSFCellStyle;
 import org.apache.poi.xssf.usermodel.XSSFFont;
@@ -26,6 +31,8 @@ import org.apache.poi.xssf.usermodel.XSSFRichTextString;
 import org.apache.poi.xssf.usermodel.XSSFRow;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.openxmlformats.schemas.spreadsheetml.x2006.main.CTCol;
+import org.openxmlformats.schemas.spreadsheetml.x2006.main.CTCols;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
@@ -36,11 +43,12 @@ public class XlsxConverter {
 	private XSSFWorkbook x;
 	private HtmlDocumentFacade htmlDocumentFacade;
 	private Element page;
-	private String output;
+	
+	private StringBuilder css = new StringBuilder();
+	
 	
 	
 	private XlsxConverter(String filePath, String output) throws IOException, InvalidFormatException, ParserConfigurationException{
-		this.output = output;
 		
 		OPCPackage op = OPCPackage.open(filePath);
 		x = new XSSFWorkbook(op);
@@ -57,7 +65,7 @@ public class XlsxConverter {
 	}
 	
 	public static void main(String[] args) throws InvalidFormatException, IOException, ParserConfigurationException, TransformerException {
-		String name = "test";
+		String name = "xml";
 		XlsxConverter.convert("c:/poi/" +name+ ".xlsx", "c:/poi/x/" +name+ ".html");
 	}
 	/**
@@ -76,55 +84,144 @@ public class XlsxConverter {
 		for(int i = 0; i < sheetNum; i ++){
 			XSSFSheet sheet = converter.x.getSheet(converter.x.getSheetName(i));
 			String sheetName =  converter.x.getSheetName(i);
-			System.err.println("starting process sheet : " +sheetName);
+			System.out.println("----starting process sheet : " +sheetName);
 			// add sheet title
 			{
 				Element title = converter.htmlDocumentFacade.createHeader2();
 				title.setTextContent(sheetName);
 				converter.page.appendChild(title);
 			}
+			
 			converter.processSheet(converter.page, sheet);
 		}
 		
 		converter.htmlDocumentFacade.updateStylesheet();
+		
+		Element style = (Element)converter.htmlDocumentFacade.getDocument().getElementsByTagName("style").item(0);
+		
+		style.setTextContent(converter.css.append(style.getTextContent()).toString());
+		
 		converter.saveAsHtml(output, converter.htmlDocumentFacade.getDocument());
 	}
 
 	private void processSheet(Element container, XSSFSheet sheet) {
-		// add sheet title
 		
 		Element table = htmlDocumentFacade.createTable();
-//		htmlDocumentFacade.addStyleClass(table, "table", "border:1");
+		int sIndex = sheet.getWorkbook().getSheetIndex(sheet);
+		String sId = "sheet_".concat(String.valueOf(sIndex));
+		table.setAttribute("id", sId);
 		table.setAttribute("border", "1");
 		table.setAttribute("cellpadding", "2");
 		table.setAttribute("cellspacing", "0");
 		table.setAttribute("style", "border-collapse: collapse;");
 		
+		css.append("#").append(sId).append(" tr{height:").append(sheet.getDefaultRowHeightInPoints()/28.34).append("cm}\n");
+		css.append("#").append(sId).append(" td{width:").append(sheet.getDefaultColumnWidth()*0.21).append("cm}\n");
+		
+		// cols
+		generateColumns(sheet, table);
+		
+		//rows
 		Iterator<Row> rows = sheet.iterator();
 		while(rows.hasNext()){
 			Row row = rows.next();
 			if(row instanceof XSSFRow)
-				processRow(table, (XSSFRow)row);
+				processRow(table, (XSSFRow)row, sheet);
 		}
 		
 		container.appendChild(table);
-		
 	}
-
-	private void processRow(Element table, XSSFRow row) {
+	/**
+	 * generated <code><col><code> tags. 
+	 * @param sheet 
+	 * @param table container.
+	 */
+	private void generateColumns(XSSFSheet sheet, Element table) {
+		List<CTCols> colsList = sheet.getCTWorksheet().getColsList();
+		MathContext mc = new MathContext(3);
+		for(CTCols cols : colsList){
+			long oldLevel = 1;
+			for(CTCol col : cols.getColArray()){
+				while(true){
+					if(oldLevel == col.getMin()){
+						break;
+					}
+					Element column = htmlDocumentFacade.createTableColumn();
+//					htmlDocumentFacade.addStyleClass(column, "col", "width:2cm;");
+					column.setAttribute("style", "width:2cm;");
+					table.appendChild(column);
+					oldLevel ++;
+				}
+				Element column = htmlDocumentFacade.createTableColumn();
+				String width = new BigDecimal(sheet.getColumnWidth(Long.bitCount(oldLevel))/1440.0, mc ).toString() ;
+				column.setAttribute("style", "width:".concat( width ).concat("cm;"));
+				table.appendChild(column);
+				
+				oldLevel ++;
+			}
+		}
+	}
+	
+	
+	private void processRow(Element table, XSSFRow row, XSSFSheet sheet) {
 		Element tr = htmlDocumentFacade.createTableRow();
-		
 		Iterator<Cell> cells = row.cellIterator();
+		if(row.isFormatted()){
+			//TODO build row style...
+		}
+		
+		if(row.getCTRow().getCustomHeight())
+			tr.setAttribute("style", "height:".concat(String.valueOf(row.getHeightInPoints())).concat("pt;"));
+		
 		while(cells.hasNext()){
 			Cell cell = cells.next();
+			
+			
+			
 			if(cell instanceof XSSFCell)
 				processCell(tr, (XSSFCell)cell);
 		}
-		
 		table.appendChild(tr);
 	}
+	
 
 	private void processCell(Element tr, XSSFCell cell) {
+		
+		
+		
+		
+		int num = cell.getSheet().getNumMergedRegions();
+		
+//		System.out.println(cell.getCTCell());
+		for(int i = 0; i < num; i ++){
+			
+		CellRangeAddress c = cell.getSheet().getMergedRegion(i);
+		
+		
+		System.out.println(c.getFirstColumn());;
+		System.out.println(c.getLastColumn());
+		System.out.println(c.getFirstRow());
+		System.out.println(c.getLastRow());
+		System.out.println();
+		System.out.println(cell.getRowIndex());
+		System.out.println(cell.getColumnIndex());
+		
+		
+		System.out.println("\n\n\n");
+		
+		
+//		System.out.println(cra);
+		
+		}
+		
+//		System.exit(0);
+			
+		
+		
+		
+		
+		
+		
 		Element td = htmlDocumentFacade.createTableCell();
 		Object value ;
 		switch(cell.getCellType()){
@@ -142,7 +239,7 @@ public class XlsxConverter {
 			processCellStyle(td, cell.getCellStyle(), null);
 			td.setTextContent(value.toString());
 		}
-		System.err.println(value);
+//		System.err.println(value);
 		tr.appendChild(td);	
 	}
 

@@ -67,8 +67,8 @@ public class XlsConverter extends AbstractExcelConverter
     public static void main(String[] args) throws Exception {
 		 
 //		 String filePath = "c:\\poi\\test.xls";
-		 String filePath = "c:\\poi\\buget.xls";
-		 String output = "c:/poi/output/xls.html";
+		 String filePath = "c:\\poi\\xml.xls";
+		 String output = "c:/poi/output/321.html";
 		 XlsConverter.convert(filePath, output);
 		 
 	}

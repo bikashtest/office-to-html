@@ -36,7 +36,6 @@ import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFPicture;
 import org.apache.poi.xwpf.usermodel.XWPFPictureData;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
-import org.apache.poi.xwpf.usermodel.XWPFStyles;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
@@ -62,8 +61,8 @@ public class DocxConverter {
 	 * @throws Exception
 	 */
 	public static void main(String[] args) throws Exception {
-		
-		String name = "×××v4.1 [秘密]1";
+
+		String name = "test";
 //		String name = "test";
 		String filePath = "c:\\poi\\"+name+".docx";
 		String output = "c:\\poi\\x\\"+name+".html";
@@ -82,14 +81,29 @@ public class DocxConverter {
 	
 	private XWPFDocument docx ;
 	
-	private String output;
+	private String imgFolderPath;
+	
+	private static final String IMG_FOLDER = "images".concat(File.separator);
+	
+	private final String imgPath;
 	
 //	private XWPFStyles styles;
 	
 	public DocxConverter( String filePath, String output) throws IOException, InvalidFormatException, ParserConfigurationException{
 		
 		Document document = DocumentBuilderFactory.newInstance().newDocumentBuilder().newDocument();
-		this.output = output;
+		StringUtil.getFilePath("");
+		{// create image folder 
+			int pos = output.lastIndexOf(".");
+			 imgFolderPath = output.substring(0, pos).concat(File.separator).concat(IMG_FOLDER);
+			
+			File folder = new File(imgFolderPath);
+			if(!folder.canRead())
+				folder.mkdirs();
+			folder = null;
+		}
+		imgPath = StringUtil.getFileName(filePath, false).concat(File.separator).concat(IMG_FOLDER);
+		
 		
 		OPCPackage container = OPCPackage.open(filePath);
 		docx = new XWPFDocument(container);
@@ -377,12 +391,8 @@ public class DocxConverter {
 	 */
 	private void processImage(Element wrap, List<XWPFPicture> pics) throws IOException {
 		
-		int pos = output.lastIndexOf(".");
-		String path = output.substring(0, pos).concat(File.separator);
-		File folder = new File(path);
-		if(!folder.canRead())
-			folder.mkdirs();
-		folder = null;
+
+		
 		
 //		Element wrapDiv = htmlDocumentFacade.createBlock();
 //		wrap.setAttribute("class", "img_wrap");
@@ -393,7 +403,7 @@ public class DocxConverter {
 			ByteArrayInputStream is = new ByteArrayInputStream(data.getData());
 			BufferedImage image = ImageIO.read(is);
 			// TODO image type convert   like .tif etc.
-			String imgFullPath = path.concat(data.getFileName());
+			String imgFullPath = imgFolderPath.concat(data.getFileName());
 			{// extract picture
 				FileOutputStream fos = null;
 				try {
@@ -406,8 +416,9 @@ public class DocxConverter {
 				}
 			}
 			{// add picture to html page
-				//TODO get img relative path for showing html page when on server &&  get the picture style, scaling in the docx file (with description style?)
-				Element img = htmlDocumentFacade.createImage(imgFullPath);
+				//TODO get image alignment , width , style etc.
+				
+				Element img = htmlDocumentFacade.createImage(imgPath.concat(data.getFileName()));
 				if(!StringUtil.isEmpty(pic.getDescription())){
 					img.setAttribute("Title", pic.getDescription());
 				}
@@ -429,7 +440,7 @@ public class DocxConverter {
 	 * @throws IOException
 	 * @throws TransformerException
 	 */
-	private void saveAsHtml(String output, org.w3c.dom.Document document) throws IOException, TransformerException{
+	private void saveAsHtml(String output,Document document) throws IOException, TransformerException{
 		
 //		check path
 		File folder = new File(StringUtil.getFilePath(output));	
